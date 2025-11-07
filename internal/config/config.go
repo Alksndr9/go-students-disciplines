@@ -9,9 +9,16 @@ import (
 
 type Config struct {
 	Env string `yaml:"env"         env-required:"true"`
+
+	PG `yaml:"pg"          env-required:"true"`
 }
 
 type PG struct {
+	User     string `yaml:"user"     env:"PG_USER"     env-required:"true"`
+	Password string `yaml:"password" env:"PG_PASSWORD" env-required:"true"`
+	Host     string `yaml:"host"     env:"PG_HOST"     env-required:"true"`
+	Port     string `yaml:"port"     env:"PG_PORT"     env-required:"true"`
+	Database string `yaml:"database" env:"PG_DATABASE" env-required:"true"`
 }
 
 type HTTPServer struct {

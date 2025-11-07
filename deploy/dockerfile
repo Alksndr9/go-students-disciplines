@@ -13,7 +13,7 @@ RUN mkdir /app
 WORKDIR /app
 
 COPY --from=builder --chown=app:app /app/app .
-# COPY --from=builder --chown=app:app /app/db/ db/
+COPY --from=builder --chown=app:app /app/db/ db/
 COPY --from=builder --chown=app:app /app/config/ config/
 
 CMD ["./app" ]
