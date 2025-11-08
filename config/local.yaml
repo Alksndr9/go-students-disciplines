@@ -7,4 +7,7 @@ pg:
   port: ${PG_PORT}
   database: ${PG_DATABASE}
 
-http_server: # to-do
+http_server:
+  address: ":8080"
+  timeout: 4s
+  idle_timeout: 60s

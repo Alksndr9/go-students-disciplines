@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
 )
@@ -10,7 +11,8 @@ import (
 type Config struct {
 	Env string `yaml:"env"         env-required:"true"`
 
-	PG `yaml:"pg"          env-required:"true"`
+	PG         `yaml:"pg"          env-required:"true"`
+	HTTPServer `yaml:"http_server"          env-required:"true"`
 }
 
 type PG struct {
@@ -22,6 +24,9 @@ type PG struct {
 }
 
 type HTTPServer struct {
+	Address     string        `yaml:"address"      env-required:"true"`
+	Timeout     time.Duration `yaml:"timeout"      env-required:"true"`
+	IdleTimeout time.Duration `yaml:"idle_timeout" env-required:"true"`
 }
 
 func MustLoad() *Config {
