@@ -37,7 +37,6 @@ func Connect(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
 
 	if err = pingDB(ctx, db, log); err != nil {
 		return nil, err
