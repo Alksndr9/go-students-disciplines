@@ -2,14 +2,16 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"gitgub.com/Alksndr9/go-students-disciplines/internal/config"
-	"gitgub.com/Alksndr9/go-students-disciplines/internal/modules/user/controller"
-	"gitgub.com/Alksndr9/go-students-disciplines/internal/modules/user/repository"
+	"gitgub.com/Alksndr9/go-students-disciplines/internal/modules"
 	"gitgub.com/Alksndr9/go-students-disciplines/internal/responder"
 	"gitgub.com/Alksndr9/go-students-disciplines/internal/router"
 	"gitgub.com/Alksndr9/go-students-disciplines/pkg/logger"
@@ -17,31 +19,39 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	_shutdownPeriod      = 15 * time.Second
+	_shutdownHardPeriod  = 3 * time.Second
+	_readinessDrainDelay = 5 * time.Second
+)
+
+var isShuttingDown atomic.Bool
+
 func main() {
 	cfg := config.MustLoad()
 
 	logger := logger.InitLogger(cfg.Env)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	db, err := psql.Connect(ctx, cfg, logger)
+	db, err := psql.Connect(rootCtx, cfg, logger)
 	if err != nil {
 		logger.Error("failed to init db", zap.Error(err))
 		os.Exit(1)
 	}
 	logger.Info("successfully connected to the db")
 
+	ongoingCtx, stopOngoingGracefully := context.WithCancel(context.Background())
+
 	logger.Info("starting students-disciplines", zap.String("env", cfg.Env))
 
 	responder := responder.NewResponder(logger)
 
-	repo := repository.NewRepo(db)
+	storages := modules.NewStorages(db)
+	controllers := modules.NewControllers(responder, logger, storages)
 
-	user := controller.NewUserController(responder, logger, repo)
-
-	router := router.NewRouter(user)
-	logger.Info("starting server", zap.String("address", cfg.Address))
+	router := router.NewRouter(controllers)
 
 	srv := &http.Server{
 		Addr:         cfg.Address,
@@ -49,17 +59,40 @@ func main() {
 		ReadTimeout:  cfg.Timeout,
 		WriteTimeout: cfg.Timeout,
 		IdleTimeout:  cfg.IdleTimeout,
+		BaseContext: func(_ net.Listener) context.Context {
+			return ongoingCtx
+		},
 	}
 
-	if err = srv.ListenAndServe(); err != nil {
-		logger.Error("failde to start server")
+	go func() {
+		logger.Info("starting server", zap.String("address", cfg.Address))
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			panic(err)
+		}
+	}()
+
+	<-rootCtx.Done()
+	stop()
+	isShuttingDown.Store(true)
+	logger.Info("Received shutdown signal, shutting down.")
+
+	time.Sleep(_readinessDrainDelay)
+	logger.Info("Readiness check propagated, now waiting for ongoing requests to finish.")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), _shutdownPeriod)
+	defer cancel()
+
+	err = srv.Shutdown(shutdownCtx)
+	stopOngoingGracefully()
+
+	if err != nil {
+		logger.Warn("Failed to wait for ongoing requests to finish, waiting for forced cancellation.")
+		time.Sleep(_shutdownHardPeriod)
 	}
+
+	logger.Info("Server shut down gracefully.")
 
 	// TO-DO: Users CRUD
 	// TO-DO: Users usecases -> validation
 	// TO-DO: Users service
-
-	// TO-DO: Gracefull-Shutdown
-
-	// TO-DO: modules interfaces
 }
